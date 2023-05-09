@@ -1,145 +1,243 @@
-from tkinter import *
-from tkinter.font import Font
+import tkinter as tk
 from tkinter import ttk
-import os
-from handleYoutube import *
+import tkinter.messagebox as messagebox
+import csv
+from InputForm import InputForm
+from video import Video
+from datetime import datetime
+import threading
+from selenium import webdriver
+import chromedriver_autoinstaller
+from helper import DownloadVideo
 from tkinter import filedialog
+import os
+import subprocess
+import json
 
-def handleDownload():
-    url = entryUrl.get()
-    rs = is_valid_youtube_link(url)
-    if rs == 3:
-        videos = getAllVideoFromPlaylist(url)
-        for video in videos:
-            my_data.append([video])
-            my_list.append([
-                Label(frameTable, textvariable=my_data[len(my_data-1)][0], anchor="w", bg='#F9FAFC', fg="#121212", height="2",width=width[cell],padx=0,pady=0,bd=0,font=("Arial", 14, "normal"))
-            ])
-                
-        rerender()
-    if rs == 1:
-        size = getSize(url)
-        my_list.append([url, size])
-        rerender()
-    print(my_list)
-    print("[LOG] valid link:", rs)
+dataTable = []
 
-def handleChooseLocation(index):
-    filename = filedialog.askdirectory()
-    print(filename, index)
+class App:
+    def __init__(self, root):
+        # Đặt tiêu đề cho cửa sổ
+        root.title("YDownloader")
 
-def rerender():
-    for row in range(0, len(my_list)):
-        for cell in range(0, len(my_list[0])):
-            my_list[row][cell].grid(row=row + 1, column=cell, padx=0, pady=0)
- 
-font_path = "./Darker_Grotesque/DarkerGrotesque-Bold.ttf"
-abs_font_path = os.path.abspath(font_path)
- 
+        # Tạo một form nhập liệu và đặt vào cửa sổ chính
+        self.input_form = InputForm(root, "URL: ", "+ Add", self)
+        self.input_form.grid(row=0, column=0, padx=5, pady=5, sticky="nsew")
 
-root = Tk()
-root.configure(bg='#F9FAFC')
-root.geometry("900x500")
+        self.columns = ('File Name', 'Resolution', 'URL', 'Size', 'Time', 'Status', 'Time Left', 'Date', 'MP3', 'STT')
 
-frameInput = Frame(root)
-frameInput.configure(width=900, height=100)
+        # Tạo bảng và đặt vào cửa sổ chính
+        self.table = ttk.Treeview(root, columns=self.columns, show="headings")
 
-labelUrl = Label(frameInput, padx=0, pady=0, text="URL: ", anchor="w", bg='#F9FAFC', fg="#121212", font=("Arial", 14, "bold"))
-entryUrl = Entry(frameInput, font=('Arial',14,'normal'), bg='#F9FAFC', fg="#121212", bd=0, width=30)
-buttonUrl = Button(frameInput, text='Download', bg='#F9FAFC', fg="#121212", bd=0, command=handleDownload)
-labelUrl.grid(row=0, column=0)
-entryUrl.grid(row=0, column=1)
-buttonUrl.grid(row=0, column=2)
+        # Xác định tiêu đề của các cột
+        self.table.heading('File Name', text='File Name')
+        self.table.heading('URL', text='URL')
+        self.table.heading('Size', text='Size')
+        self.table.heading('Status', text='Status')
+        self.table.heading('Time Left', text='Time Left')
+        self.table.heading('Date', text='Date')
+        self.table.heading('Time', text='Time')
+        self.table.heading('Resolution', text='Resolution')
+        self.table.heading('MP3', text='MP3')
+        self.table.heading('STT', text='STT')
 
-frameTable = Frame(root)
-frameTable.configure(width=800, height=400, bg='#F9FAFC')
+        # Căn chỉnh các cột trong bảng
+        self.table.column('File Name', width=70, anchor='w')
+        self.table.column('URL', width=0, anchor='w', stretch=tk.NO)
+        self.table.column('Size', width=10, anchor='w')
+        self.table.column('Status', width=10, anchor='w')
+        self.table.column('Time Left', width=0, anchor='w', stretch=tk.NO)
+        self.table.column('Date', width=50, anchor='w')
+        self.table.column('Time', width=50, anchor='w')
+        self.table.column('Resolution', width=50, anchor='w')
+        self.table.column('MP3', width=0, anchor='w', stretch=tk.NO)
+        self.table.column('STT', width=0, anchor='w', stretch=tk.NO)
 
-width = [30, 10, 10, 15, 20, 10]
+        # Tạo thanh cuộn cho bảng
+        scrollbar = ttk.Scrollbar(root, orient="vertical", command=self.table.yview)
+        self.table.configure(yscrollcommand=scrollbar.set)
 
-headerName = Label(frameTable, padx=0, pady=0, width="30", height="2", text="Url", anchor="w", bg='#F9FAFC', fg="#121212", font=("Arial", 14, "bold"))
-headerSize = Label(frameTable, padx=0, pady=0, text="Size", width="10", height="2", bg='#F9FAFC', fg="#121212", font=("Arial", 14, "bold"))
-headerStatus = Label(frameTable, padx=0, pady=0, text="Status", width="10", height="2", bg='#F9FAFC', fg="#121212", font=("Arial", 14, "bold"))
-headerTimeLeft = Label(frameTable, padx=0, pady=0, text="Time Left", width="15", height="2", bg='#F9FAFC', fg="#121212", font=("Arial", 14, "bold"))
-headerTime = Label(frameTable, padx=0, pady=0, text="Location", height="2", width="20", bg='#F9FAFC', fg="#121212", font=("Arial", 14, "bold"))
-headerFile = Label(frameTable, padx=0, pady=0, text="Action", height="2", bg='#F9FAFC', fg="#121212", font=("Arial", 14, "bold"))
+        # Tạo sub-menu
+        self.menu = tk.Menu(root, tearoff=0)
+        self.menu.add_command(label="Download", command=self.dlVideo)
+        self.menu.add_command(label="Delete", command=self.deleteRow)
+        self.menu.add_command(label="Open", command=self.open_folder_and_select_file)
 
-headerName.grid(row=0, column=0)
-headerSize.grid(row=0, column=1)
-headerStatus.grid(row=0, column=2)
-headerTimeLeft.grid(row=0, column=3)
-headerTime.grid(row=0, column=4)
-headerFile.grid(row=0, column=5)
+        self.table.bind("<Button-3>", self.popup)
+        self.table.bind("<Control-Button-1>", self.popup)
 
-# resolutions = getAllResolution("https://www.youtube.com/watch?v=pMQ2b8Y0Qrw&list=RDpMQ2b8Y0Qrw&start_radio=1")
-# videos = getAllVideoFromPlaylist("https://www.youtube.com/playlist?list=PL6gx4Cwl9DGCkg2uj3PxUWhMDuTw3VKjM")
+        # Đặt bảng và thanh cuộn lên cửa sổ chính
+        self.table.grid(row=1, column=0, padx=5, pady=5, sticky="nsew")
+        scrollbar.grid(row=1, column=1, sticky="ns")
 
-my_list = [
-    ["https://www.youtube.com/watch?v=pMQ2b8Y0Qrw&list=RDpMQ2b8Y0Qrw&start_radio=1",
-     "26.405",
-     "Done",
-     "",
-     "/user/test",
-     ""
-    ],
-    ["https://www.youtube.com/watch?v=pMQ2b8Y0Qrw&list=RDpMQ2b8Y0Qrw&start_radio=1",
-     "10.702",
-     "",
-     "",
-     "/user/test",
-     ""
-    ],
-    ["https://www.youtube.com/watch?v=pMQ2b8Y0Qrw&list=RDpMQ2b8Y0Qrw&start_radio=1",
-     "2.5",
-     "Done",
-     "",
-     "/user/test",
-     ""
-    ],
-    ["https://www.youtube.com/watch?v=pMQ2b8Y0Qrw&list=RDpMQ2b8Y0Qrw&start_radio=1",
-     "8.2",
-     "",
-     "",
-     "/user/test",
-     ""
-    ],
-    ["https://www.youtube.com/watch?v=pMQ2b8Y0Qrw&list=RDpMQ2b8Y0Qrw&start_radio=1",
-     "9.5782",
-     "Done",
-     "",
-     "/user/test",
-     ""
-    ]
-]
-my_data = []
+        # Thiết lập cấu trúc cột của cửa sổ
+        root.columnconfigure(0, weight=1)
+        root.columnconfigure(1, weight=0)
+        root.rowconfigure(0, weight=0)
+        root.rowconfigure(1, weight=1)
 
-# for video in videos:
-#     my_list.append([video, '', '', '', '', ''])
+        # Tạo thread riêng biệt để chạy Selenium và lặp lại công việc
+        self.selenium_thread = threading.Thread(target=self.selenium_task)
+        self.selenium_thread.daemon = True
+        self.selenium_thread.start()
+        
+        root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
-for row in range(0, len(my_list)):
-    for cell in range(0, len(my_list[0])):
-        print(cell)
-        if cell == 5:
-            buttonCell = Button(frameTable, text='Choose...', bg='#F9FAFC', fg="#121212", bd=0)
-            buttonCell.grid(row=row + 1, column=cell, padx=0, pady=0)
+        # Thiết lập kích thước tối thiểu cho cửa sổ
+        root.wm_minsize(700, 300)
+
+        self.default_value()
+        self._center_window(root)
+    
+    def selenium_task(self):
+        opt = webdriver.ChromeOptions()
+        opt.add_argument("--start-maximized")
+        opt.add_argument("--headless")
+
+        chromedriver_autoinstaller.install()
+        # Khởi tạo driver
+        self.driver = webdriver.Chrome(options=opt)
+        
+        # while True:
+        #     # Ngủ một lúc trước khi thực hiện lại công việc
+        #     time.sleep(5)
+
+    def on_submit(self, dataRender):
+        video = Video(
+            dataRender['title'],
+            dataRender['url'],
+            '',
+            0,
+            0,
+            datetime.today().strftime('%Y-%m-%d'),
+            dataRender['video'],
+            [],
+            dataRender['time'],
+            root,
+            self.reRenderTable,
+            dataRender['y2m'],
+            "",
+            "",
+            ""
+        )
+        print(video.getSetVideo())
+        dataTable.append(video)
+        tp = video.getSetVideo() + (len(dataTable) - 1,)
+        item = self.table.insert('', 'end', values=tp)
+        return
+
+    def reRenderTable(self):
+        self.table.delete(*self.table.get_children())
+        for idx, vi in enumerate(dataTable):
+            tp = vi.getSetVideo() + (idx,)
+            print(tp)
+            self.table.insert('', 'end', values=tp)
+    
+    def default_value(self):
+        with open("data.csv", 'r') as file:
+            csvreader = csv.reader(file)
+            for row in csvreader:
+                rs = json.loads(row[6])
+                video = Video(
+                    row[0], row[1], row[2], int(row[3]), row[4], row[5], rs, row[7], row[8], root, self.reRenderTable, 
+                    row[12], row[13], row[9], row[10]
+                )
+                dataTable.append(video)
+        self.reRenderTable()
+        return
+
+    def deleteRow(self):
+        selected_row = self.table.focus()
+        resInfo = self.table.item(selected_row, "value")[-1]
+        dataTable.pop(int(resInfo))
+        self.reRenderTable()
+
+    def dlVideo(self):
+        selected_row = self.table.focus()
+        print(selected_row)
+        resInfo = self.table.item(selected_row, "value")[-1]
+        _url = dataTable[int(resInfo)].getY2m()
+        # _idx = dataTable[int(resInfo)].getIndexResolutionVideo()
+        _btnDownload = dataTable[int(resInfo)].getBtnDownload()
+        _name = dataTable[int(resInfo)].getName()
+        _resolution = dataTable[int(resInfo)].getSigleResolution()
+        folder_path = filedialog.askdirectory()
+        messagebox.showinfo("Notifycation", "Downloading, please click OK to continue")
+        rs = DownloadVideo(_url, self.driver, _btnDownload, _name, _resolution, folder_path)
+        if (rs != False):
+            messagebox.showinfo("Notifycation", "Download successful")
+            dataTable[int(resInfo)].setStatus(1)
+            dataTable[int(resInfo)].setLocation(rs)
         else:
-            labelCell = Label(frameTable, 
-                text=my_list[row][cell], 
-                anchor="w", 
-                bg='#F9FAFC', 
-                fg="#121212", 
-                height="2",
-                width=width[cell],
-                padx=0,
-                pady=0,
-                bd=0,
-                font=("Arial", 14, "normal"))
-            labelCell.grid(row=row + 1, column=cell, padx=0, pady=0)
-            # separator = ttk.Separator(orient="horizontal")
-            # separator.place(in_=labelCell, x=0, rely=1.0, height=1, relwidth=1.0)
+            messagebox.showinfo("Notifycation", "Something Wrong, please try downloading again")
+            dataTable[int(resInfo)].setStatus(2)
+            dataTable[int(resInfo)].setLocation("")
+        self.reRenderTable()
 
-frameTable.grid_columnconfigure(0)
-frameTable.grid_rowconfigure(0)
-frameInput.grid(row=0, column=0)
-frameTable.grid(row=1, column=0)
-# t = Table(root)
+    def popup(self, event):
+        # Tạo sub-menu cho cột đầu tiên
+        row_id = self.table.identify_row(event.y)
+        column_id = self.table.identify_column(event.x)
+        if row_id and column_id:
+            if column_id == "#2":
+                resInfo = self.table.item(row_id, "value")[-1]
+                print(dataTable[int(resInfo)].getStatus())
+                if dataTable[int(resInfo)].getStatus() != "Success":
+                    print(self.table.item(row_id, "value"))
+                    dataTable[int(resInfo)].getMenuRes().post(event.x_root, event.y_root)
+            else:
+                resInfo = self.table.item(row_id, "value")[-1]
+                print(self.table.item(row_id, "value"))
+                self.menu.post(event.x_root, event.y_root)
+
+    def open_folder_and_select_file(self):
+        file_path = ""
+        selected_row = self.table.focus()
+        print(selected_row)
+        resInfo = self.table.item(selected_row, "value")[-1]
+        file_path = dataTable[int(resInfo)].getLocation()
+        if file_path == "":
+            messagebox.showinfo("Notifycation", "You haven't downloaded the file")
+        else:
+            # Lấy đường dẫn đầy đủ đến tập tin
+            full_path = os.path.abspath(file_path)
+
+            # Tạo đường dẫn đến thư mục chứa tập tin
+            folder_path = os.path.dirname(full_path)
+
+            # Mở thư mục và đưa người dùng đến vị trí của tập tin trong thư mục đó trên hệ thống
+            subprocess.run(["open", "-R", full_path], cwd=folder_path)
+
+    def _center_window(self, window):
+        # Lấy kích thước của màn hình
+        screen_width = window.winfo_screenwidth()
+        screen_height = window.winfo_screenheight()
+
+        # Tính toán vị trí và kích thước cho cửa sổ
+        window_width = 500
+        window_height = 300
+        x = (screen_width - window_width) // 2
+        y = (screen_height - window_height) // 2
+
+        # Thiết lập vị trí và kích thước cho cửa sổ
+        window.geometry("{}x{}+{}+{}".format(window_width, window_height, x, y))
+
+    def on_closing(self):
+        self.driver.quit()
+        with open(f'data.csv', mode='w') as file:
+            writer = csv.writer(file)
+            for vi in dataTable:
+                writer.writerow(vi.extractAttribute().values())
+                print(vi.extractAttribute())
+        root.destroy()
+
+
+# Tạo cửa sổ Tkinter
+root = tk.Tk()
+
+# Tạo ứng dụng
+app = App(root)
+
+# Chạy ứng dụng
 root.mainloop()
